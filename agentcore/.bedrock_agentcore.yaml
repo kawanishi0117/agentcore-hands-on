@@ -30,7 +30,7 @@ agents:
     bedrock_agentcore:
       agent_id: kb_search_agent-Pb3FH1Djkx
       agent_arn: arn:aws:bedrock-agentcore:ap-northeast-1:391817384261:runtime/kb_search_agent-Pb3FH1Djkx
-      agent_session_id: new-session-20251229-abcdefghijklmn
+      agent_session_id: 59770c7e-7de0-4f83-9733-b1919a96a2f3
     codebuild:
       project_name: bedrock-agentcore-kb_search_agent-builder
       execution_role: arn:aws:iam::391817384261:role/AmazonBedrockAgentCoreSDKCodeBuild-ap-northeast-1-5101954bf4
