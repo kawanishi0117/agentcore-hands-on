@@ -8,25 +8,35 @@ from main import build_agent
 
 app = BedrockAgentCoreApp()
 
-# エージェントを初期化
-agent, mcp_client = build_agent()
+# エージェントを初期化（グローバルで一度だけ）
+agent = None
 
 
 @app.entrypoint
-def handler(payload: dict):
+def invoke(payload: dict, context=None):
     """
     AgentCore Runtimeからの呼び出しを処理
     
     Args:
-        payload: {"input": "ユーザーの質問"} or {"prompt": "ユーザーの質問"}
+        payload: {"prompt": "ユーザーの質問"}
+        context: 実行コンテキスト（オプション）
     
     Returns:
-        {"output": "エージェントの回答"}
+        {"result": "エージェントの回答"}
     """
-    user_text = payload.get("input") or payload.get("prompt") or ""
+    global agent
     
-    # MCPクライアントのコンテキスト内でエージェントを実行
-    with mcp_client:
-        result = agent(user_text)
+    # 初回呼び出し時にエージェントを構築
+    if agent is None:
+        agent = build_agent()
     
-    return {"output": str(result)}
+    user_text = payload.get("prompt") or payload.get("input") or ""
+    
+    # エージェントを実行
+    result = agent(user_text)
+    
+    return {"result": str(result)}
+
+
+if __name__ == "__main__":
+    app.run()
