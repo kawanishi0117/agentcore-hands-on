@@ -1,30 +1,18 @@
 # kbquery/lambda_function.py
 """
 ナレッジベース検索用Lambda関数
-AgentCore Gateway経由で呼び出される
+AgentCore Gateway経由で呼び出される（Smithyモデル対応）
 
 機能:
 - クエリ分解: 長いクエリを複数に分けて検索
 - ハイブリッド検索: ベクトル検索 + キーワード完全一致
 - リランキング: 検索結果の再順位付け
-
-呼び出し例:
-{
-    "action": "search",
-    "kb_name": "product_docs",
-    "query": "〇〇の使い方",
-    "max_results": 5
-}
-
-{
-    "action": "list_kbs"
-}
 """
 import json
 import os
 import re
 import boto3
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from kb_config import get_kb_config, list_available_kbs
 
@@ -40,7 +28,7 @@ def get_bedrock_client():
     return boto3.client("bedrock-agent-runtime", region_name=REGION)
 
 
-def split_query(query: str) -> list[str]:
+def split_query(query: str) -> List[str]:
     """
     長いクエリを複数のサブクエリに分解
     
@@ -74,7 +62,7 @@ def split_query(query: str) -> list[str]:
     return sub_queries if len(sub_queries) > 1 else [query]
 
 
-def extract_keywords(query: str) -> list[str]:
+def extract_keywords(query: str) -> List[str]:
     """
     クエリから重要キーワードを抽出（ハイブリッド検索用）
     
@@ -99,15 +87,15 @@ def extract_keywords(query: str) -> list[str]:
 
 
 def build_retrieval_config(
-    kb_config: dict,
+    kb_config: Dict[str, Any],
     max_results: int,
     use_hybrid: bool = True
-) -> dict:
+) -> Dict[str, Any]:
     """
     KB設定からretrieval configを構築
     リランキング・ハイブリッド検索の設定を自動適用
     """
-    config: dict[str, Any] = {
+    config: Dict[str, Any] = {
         "vectorSearchConfiguration": {
             "numberOfResults": max_results
         }
@@ -140,14 +128,14 @@ def build_retrieval_config(
 
 
 def merge_results(
-    all_results: list[dict],
+    all_results: List[Dict[str, Any]],
     max_results: int
-) -> list[dict]:
+) -> List[Dict[str, Any]]:
     """
     複数クエリの結果をマージ・重複除去・スコア順ソート
     """
     # sourceをキーにして重複除去（スコアが高い方を残す）
-    seen: dict[str, dict] = {}
+    seen: Dict[str, Dict[str, Any]] = {}
     for result in all_results:
         source = result.get("source", "")
         if source not in seen or result.get("score", 0) > seen[source].get("score", 0):
@@ -158,11 +146,11 @@ def merge_results(
     return merged[:max_results]
 
 
-def search_knowledge_base(
+def search_knowledge_base_impl(
     kb_name: str,
     query: str,
     max_results: int = 5
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """
     ナレッジベースを検索（クエリ分解・ハイブリッド検索対応）
     
@@ -191,7 +179,7 @@ def search_knowledge_base(
     use_hybrid = kb_config.get("hybrid", False)
     
     # 各サブクエリで検索実行
-    all_results: list[dict] = []
+    all_results: List[Dict[str, Any]] = []
     queries_used = []
     
     for sub_query in sub_queries:
@@ -228,75 +216,165 @@ def search_knowledge_base(
     merged_results = merge_results(all_results, max_results)
     
     return {
-        "kb_name": kb_name,
-        "kb_description": kb_config["description"],
+        "kbName": kb_name,
+        "kbDescription": kb_config["description"],
         "query": query,
-        "sub_queries": queries_used,
-        "keywords_extracted": keywords,
+        "subQueries": queries_used,
+        "keywordsExtracted": keywords,
         "results": merged_results,
         "count": len(merged_results),
         "reranked": kb_config.get("rerank", False),
-        "hybrid_search": kb_config.get("hybrid", False)
+        "hybridSearch": kb_config.get("hybrid", False)
     }
 
 
-def lambda_handler(event: dict, context: Any) -> dict:
+def auto_select_kb(query: str) -> str:
     """
-    Lambda エントリーポイント
+    クエリ内容から最適なナレッジベースを自動選択
     
-    アクション:
-    - list_kbs: 利用可能なKB一覧を取得
-    - search: 指定KBを検索
+    Args:
+        query: 検索クエリ
+    
+    Returns:
+        選択されたKB名
+    """
+    kbs = list_available_kbs()
+    
+    if not kbs:
+        raise ValueError("No knowledge bases available")
+    
+    # キーワードマッチングで最適なKBを選択
+    query_lower = query.lower()
+    best_kb = None
+    best_score = 0
+    
+    # 簡易的なキーワードマッチング
+    keyword_map = {
+        "product_docs": ["認証", "ログイン", "パスワード", "auth", "login", "マニュアル", "使い方"],
+        "faq": ["よくある質問", "faq", "サンプル", "例", "ドキュメント"],
+    }
+    
+    for kb in kbs:
+        kb_name = kb["name"]
+        keywords = keyword_map.get(kb_name, [])
+        
+        # キーワードマッチスコア計算
+        score = sum(1 for kw in keywords if kw in query_lower)
+        
+        # 説明文とのマッチも考慮
+        if kb["description"].lower() in query_lower:
+            score += 2
+        
+        if score > best_score:
+            best_score = score
+            best_kb = kb_name
+    
+    # マッチしなければ最初のKBを使用
+    if not best_kb:
+        best_kb = kbs[0]["name"]
+    
+    return best_kb
+
+
+# ========================================
+# Smithy対応のオペレーションハンドラー
+# ========================================
+
+def handle_list_knowledge_bases(event: Dict[str, Any]) -> Dict[str, Any]:
+    """ListKnowledgeBases オペレーション"""
+    kbs = list_available_kbs()
+    return {
+        "knowledgeBases": kbs
+    }
+
+
+def handle_search_knowledge_base(event: Dict[str, Any]) -> Dict[str, Any]:
+    """SearchKnowledgeBase オペレーション"""
+    kb_name = event.get("kbName")
+    query = event.get("query")
+    max_results = event.get("maxResults", 5)
+    
+    if not kb_name:
+        raise ValueError("kbName is required")
+    if not query:
+        raise ValueError("query is required")
+    
+    result = search_knowledge_base_impl(kb_name, query, max_results)
+    return {"result": result}
+
+
+def handle_auto_search_knowledge_base(event: Dict[str, Any]) -> Dict[str, Any]:
+    """AutoSearchKnowledgeBase オペレーション"""
+    query = event.get("query")
+    max_results = event.get("maxResults", 5)
+    
+    if not query:
+        raise ValueError("query is required")
+    
+    # 最適なKBを自動選択
+    selected_kb = auto_select_kb(query)
+    
+    # 検索実行
+    result = search_knowledge_base_impl(selected_kb, query, max_results)
+    
+    return {
+        "selectedKb": selected_kb,
+        "result": result
+    }
+
+
+# ========================================
+# Lambda ハンドラー（Gateway対応）
+# ========================================
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Lambda エントリーポイント（AgentCore Gateway対応）
+    
+    Gatewayからは以下の形式でイベントが渡される:
+    {
+        "operation": "ListKnowledgeBases" | "SearchKnowledgeBase" | "AutoSearchKnowledgeBase",
+        "input": { ... }  # オペレーション固有の入力
+    }
     """
     try:
-        action = event.get("action", "search")
+        operation = event.get("operation")
+        input_data = event.get("input", {})
         
-        # KB一覧取得
-        if action == "list_kbs":
+        # オペレーションに応じてハンドラーを呼び出し
+        if operation == "ListKnowledgeBases":
+            output = handle_list_knowledge_bases(input_data)
+        elif operation == "SearchKnowledgeBase":
+            output = handle_search_knowledge_base(input_data)
+        elif operation == "AutoSearchKnowledgeBase":
+            output = handle_auto_search_knowledge_base(input_data)
+        else:
             return {
-                "statusCode": 200,
+                "statusCode": 400,
                 "body": json.dumps({
-                    "knowledge_bases": list_available_kbs()
+                    "message": f"Unknown operation: {operation}"
                 }, ensure_ascii=False)
             }
         
-        # 検索
-        if action == "search":
-            kb_name = event.get("kb_name", "")
-            query = event.get("query", "")
-            max_results = event.get("max_results", 5)
-            
-            if not kb_name:
-                return {
-                    "statusCode": 400,
-                    "body": json.dumps({"error": "kb_name is required"}, ensure_ascii=False)
-                }
-            
-            if not query:
-                return {
-                    "statusCode": 400,
-                    "body": json.dumps({"error": "query is required"}, ensure_ascii=False)
-                }
-            
-            result = search_knowledge_base(kb_name, query, max_results)
-            
-            return {
-                "statusCode": 200,
-                "body": json.dumps(result, ensure_ascii=False)
-            }
-        
+        # 成功レスポンス
         return {
-            "statusCode": 400,
-            "body": json.dumps({"error": f"Unknown action: {action}"}, ensure_ascii=False)
+            "statusCode": 200,
+            "body": json.dumps(output, ensure_ascii=False)
         }
     
     except ValueError as e:
+        # バリデーションエラー
         return {
             "statusCode": 400,
-            "body": json.dumps({"error": str(e)}, ensure_ascii=False)
+            "body": json.dumps({
+                "message": str(e)
+            }, ensure_ascii=False)
         }
     except Exception as e:
+        # 内部エラー
         return {
             "statusCode": 500,
-            "body": json.dumps({"error": str(e)}, ensure_ascii=False)
+            "body": json.dumps({
+                "message": str(e)
+            }, ensure_ascii=False)
         }
