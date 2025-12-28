@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockKnowledgeBaseAccess",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:Retrieve",
+        "bedrock:RetrieveAndGenerate"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:ap-northeast-1:YOUR_ACCOUNT_ID:knowledge-base/JEBUX7Q8QN",
+        "arn:aws:bedrock:ap-northeast-1:YOUR_ACCOUNT_ID:knowledge-base/2I5CHITSB5"
+      ]
+    },
+    {
+      "Sid": "BedrockModelAccessForRerank",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:ap-northeast-1::foundation-model/amazon.rerank-v1:0",
+        "arn:aws:bedrock:ap-northeast-1::foundation-model/cohere.rerank-v3-5:0"
+      ]
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-1:YOUR_ACCOUNT_ID:log-group:/aws/lambda/kbquery-function:*"
+    }
+  ]
+}

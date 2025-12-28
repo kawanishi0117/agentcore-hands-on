@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Knowledge Base Query Lambda for AgentCore Gateway
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+    MemorySize: 256
+
+Resources:
+  KBQueryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: kbquery-function
+      Handler: lambda_function.lambda_handler
+      CodeUri: .
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:Retrieve
+                - bedrock:RetrieveAndGenerate
+              Resource: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+
+Outputs:
+  KBQueryFunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt KBQueryFunction.Arn
