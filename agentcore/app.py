@@ -1,13 +1,15 @@
 # agentcore/app.py
 """
 AgentCore Runtime用エントリーポイント
-デプロイ時はこのファイルがエントリーポイントになる
+Gateway経由でナレッジベース検索を実行（IAM認証）
 """
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from main import build_agent
 
 app = BedrockAgentCoreApp()
-agent = build_agent()
+
+# エージェントを初期化
+agent, mcp_client = build_agent()
 
 
 @app.entrypoint
@@ -22,5 +24,9 @@ def handler(payload: dict):
         {"output": "エージェントの回答"}
     """
     user_text = payload.get("input") or payload.get("prompt") or ""
-    result = agent(user_text)
+    
+    # MCPクライアントのコンテキスト内でエージェントを実行
+    with mcp_client:
+        result = agent(user_text)
+    
     return {"output": str(result)}

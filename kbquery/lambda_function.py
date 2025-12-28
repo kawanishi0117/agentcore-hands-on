@@ -277,36 +277,51 @@ def auto_select_kb(query: str) -> str:
 
 
 # ========================================
-# Smithy対応のオペレーションハンドラー
+# ツールハンドラー（AgentCore Gateway対応）
 # ========================================
 
-def handle_list_knowledge_bases(event: Dict[str, Any]) -> Dict[str, Any]:
-    """ListKnowledgeBases オペレーション"""
+def handle_list_kbs(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    list_kbs ツール: 利用可能なKB一覧を返す
+    """
     kbs = list_available_kbs()
     return {
         "knowledgeBases": kbs
     }
 
 
-def handle_search_knowledge_base(event: Dict[str, Any]) -> Dict[str, Any]:
-    """SearchKnowledgeBase オペレーション"""
-    kb_name = event.get("kbName")
-    query = event.get("query")
-    max_results = event.get("maxResults", 5)
+def handle_kb_search(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    kb_search ツール: 指定KBを検索する
+    
+    Args:
+        kb_name: 検索するナレッジベースの名前
+        query: 検索クエリ
+        max_results: 取得する結果の最大数（デフォルト: 5）
+    """
+    kb_name = args.get("kb_name")
+    query = args.get("query")
+    max_results = args.get("max_results", 5)
     
     if not kb_name:
-        raise ValueError("kbName is required")
+        raise ValueError("kb_name is required")
     if not query:
         raise ValueError("query is required")
     
     result = search_knowledge_base_impl(kb_name, query, max_results)
-    return {"result": result}
+    return result
 
 
-def handle_auto_search_knowledge_base(event: Dict[str, Any]) -> Dict[str, Any]:
-    """AutoSearchKnowledgeBase オペレーション"""
-    query = event.get("query")
-    max_results = event.get("maxResults", 5)
+def handle_auto_search(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    auto_search ツール: クエリから最適なKBを自動選択して検索
+    
+    Args:
+        query: 検索クエリ
+        max_results: 取得する結果の最大数（デフォルト: 5）
+    """
+    query = args.get("query")
+    max_results = args.get("max_results", 5)
     
     if not query:
         raise ValueError("query is required")
@@ -323,8 +338,16 @@ def handle_auto_search_knowledge_base(event: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# ツール名とハンドラーのマッピング
+TOOL_HANDLERS = {
+    "list_kbs": handle_list_kbs,
+    "kb_search": handle_kb_search,
+    "auto_search": handle_auto_search,
+}
+
+
 # ========================================
-# Lambda ハンドラー（Gateway対応）
+# Lambda ハンドラー（AgentCore Gateway対応）
 # ========================================
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -333,28 +356,64 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     
     Gatewayからは以下の形式でイベントが渡される:
     {
-        "operation": "ListKnowledgeBases" | "SearchKnowledgeBase" | "AutoSearchKnowledgeBase",
-        "input": { ... }  # オペレーション固有の入力
+        "toolName": "list_kbs" | "kb_search" | "auto_search",
+        "input": { ... }  # ツール固有の引数
+    }
+    
+    または直接引数が渡される場合:
+    {
+        "kb_name": "...",
+        "query": "...",
+        ...
     }
     """
     try:
-        operation = event.get("operation")
-        input_data = event.get("input", {})
+        # デバッグ用: 受信イベントをログ出力
+        print(f"Received event: {json.dumps(event, ensure_ascii=False)}")
         
-        # オペレーションに応じてハンドラーを呼び出し
-        if operation == "ListKnowledgeBases":
-            output = handle_list_knowledge_bases(input_data)
-        elif operation == "SearchKnowledgeBase":
-            output = handle_search_knowledge_base(input_data)
-        elif operation == "AutoSearchKnowledgeBase":
-            output = handle_auto_search_knowledge_base(input_data)
-        else:
+        # ツール名を取得（複数の形式に対応）
+        tool_name = (
+            event.get("toolName") or 
+            event.get("tool_name") or 
+            event.get("name") or
+            event.get("operation")  # 旧形式との互換性
+        )
+        
+        # 引数を取得（複数の形式に対応）
+        args = event.get("input") or event.get("arguments") or event
+        
+        # ツール名がない場合、引数から推測
+        if not tool_name:
+            if "kb_name" in args and "query" in args:
+                tool_name = "kb_search"
+            elif "query" in args:
+                tool_name = "auto_search"
+            else:
+                tool_name = "list_kbs"
+        
+        # 旧形式のオペレーション名を新形式に変換
+        operation_mapping = {
+            "ListKnowledgeBases": "list_kbs",
+            "SearchKnowledgeBase": "kb_search",
+            "AutoSearchKnowledgeBase": "auto_search",
+        }
+        tool_name = operation_mapping.get(tool_name, tool_name)
+        
+        print(f"Tool name: {tool_name}, Args: {json.dumps(args, ensure_ascii=False)}")
+        
+        # ハンドラーを取得して実行
+        handler = TOOL_HANDLERS.get(tool_name)
+        if not handler:
             return {
                 "statusCode": 400,
                 "body": json.dumps({
-                    "message": f"Unknown operation: {operation}"
+                    "error": f"Unknown tool: {tool_name}",
+                    "availableTools": list(TOOL_HANDLERS.keys())
                 }, ensure_ascii=False)
             }
+        
+        # ツール実行
+        output = handler(args)
         
         # 成功レスポンス
         return {
@@ -367,14 +426,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return {
             "statusCode": 400,
             "body": json.dumps({
-                "message": str(e)
+                "error": str(e)
             }, ensure_ascii=False)
         }
     except Exception as e:
         # 内部エラー
+        import traceback
         return {
             "statusCode": 500,
             "body": json.dumps({
-                "message": str(e)
+                "error": str(e),
+                "traceback": traceback.format_exc()
             }, ensure_ascii=False)
         }

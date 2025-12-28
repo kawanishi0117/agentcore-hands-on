@@ -1,71 +1,127 @@
-`python main.py` で **「Bedrockに繋がって、StrandsのAgentが動く」** ところまで来てるので、次は “エージェントらしさ” を1個ずつ足していくのが一番学びがデカいです。
+# AgentCore ナレッジベース検索エージェント
 
----
+Gatント
 
-## 1) まずは「会話アプリ化」して手触りを掴む（REPL）
+## 機能
 
-今は1回呼んで終わりなので、対話ループにします。これだけで実験が爆速になります。
+- **ListKnowledgeBases**: 利用可能なナレッジベース一覧を取得
+ジベースを検索
+- **AutoSearchKnowledgeBase**: クエリから最適索
 
-* `input()` でユーザー入力 → `agent(...)` で応答
-* ついでに履歴（messages）も持たせると「前の文脈」を使えるようになります（Strands/モデル側の仕組みによる）
 
----
 
-## 2) “ツール” を1個生やして、Agentの本体を理解する
+トール
 
-Strandsは **Python関数を `@tool` でツール化**できます。ここが「ただのLLM」と「エージェント」の分岐点。 ([GitHub][1])
 
-例：ギター練習の「今日のメニュー」を作るだけのツールとか、簡単なやつでOK。
+pip install -r requirements.txt
+`
 
-* `@tool` を付けた関数を `Agent(tools=[...])` に渡す
-* docstring が “ツール説明” としてモデルに渡る（ここ重要） ([GitHub][1])
+境変数の設定
 
----
+#### 方法A: PowerShellスクリプトで設定
 
-## 3) ストリーミング/イベントで「今なにしてるか」を見える化（デバッグ最強）
+```hell
+ps1
+```
 
-AgentCoreやプロダクトにすると **“処理中表示”** が欲しくなりますよね。
-Strandsは `callback_handler` や `stream_async` でイベントを拾えます。 ([Amazon Web Services, Inc.][2])
+対話形式でOAuth認証情報を入力できます。
 
-* 「ツール呼び出し中…」
-* 「モデル出力中…」
-  みたいな状態が追えるので、**詰まった時に原因が一発で分かる**ようになります。
 
----
 
-## 4) 次の山場：AgentCore Runtimeにデプロイして「ローカル卒業」
+```powershe
+# テンプレートをコピー
+nv
 
-学習としてはここがキリ良いです。
+入力
+notepad .env
+`
 
-AgentCoreは “エージェントを安全に運用するための基盤（Runtime / Memory / Identity / Gateway / Observability…）” なので、まずは **Runtimeに載せる** のが王道です。 ([AWS ドキュメント][3])
+数：
+- `GATEWAY_URL`: Gateway MCP エンドポイント（既に設定済み）
 
-最短ルートは **Bedrock AgentCore starter toolkit（CLI）** を使うやり方で、Strandsのエージェントをコマンドでデプロイできます。 ([GitHub][4])
-AWS公式ブログ側でも “数分でホスティング” の流れが紹介されています。 ([Amazon Web Services, Inc.][5])
+- `GATEWAY_CLIENT_SECRET`: OAuth クライアントシークレット
+- `GATEWAY_TOKEN_URL`: OAuth トークンエンドポイント
 
----
+###の取得方法
 
-## 5) その次：Memory / Identity / Gateway / Observability を順番に足す
+1. AWSコンソール → **Amazon Bedrock** → **AgentCore** → **Gateways**
+を開く
+3. **OAuth Configuration** セクションから以下をコピー：
+ ID
+   - Client Secret
+   - Token Endpoint URL
 
-Runtimeに載せたら、AgentCoreの「運用機能」を順に足すのが理解しやすいです。
+## 使い方
 
-* **Memory**：会話の長期記憶・要約保存など（雑に履歴を全部投げ続けるのを卒業）
-* **Identity**：Cognito / Entra ID などと連携して社内利用向けに安全に ([Strands Agents][6])
-* **Gateway**：ツールや外部データ（MCP等）に“制御されたアクセス” ([Amazon Web Services, Inc.][7])
-* **Observability**：本番でのトレース/品質監視（後から効いてくる） ([Amazon Web Services, Inc.][7])
+###PLモード
 
----
+```powershell
+y
+```
 
-# 迷ったらこの「次の一手」がおすすめ（学習効率高い）
+きます：
 
-**① `@tool` でツールを1個追加 → ② callback_handler でツール実行ログを表示 → ③ AgentCore Runtimeへデプロイ**
-この3段で、いきなり「エージェント開発の本体」を通れます。
+``
+you> 認証機能について教えて
+bot> [ナレッジベースを検索して回答]
 
-もしよければ、いまの目的が **(A) ローカルで学習したい** / **(B) 早くAgentCore Runtimeにデプロイしたい** のどっち寄りかだけ教えて。そっちに合わせて、あなたの `main.py` をそのまま拡張する形で “次に書くコード” を具体的に出すよ。
+you> どんなナレッジベースがある？
+bot> [KB一覧を表示]
 
-[1]: https://github.com/strands-agents/sdk-python?utm_source=chatgpt.com "strands-agents/sdk-python: A model-driven approach to ..."
-[2]: https://aws.amazon.com/blogs/machine-learning/strands-agents-sdk-a-technical-deep-dive-into-agent-architectures-and-observability/?utm_source=chatgpt.com "Strands Agents SDK: A technical deep dive into ..."
-[3]: https://docs.aws.amazon.com/bedrock-agentcore/?utm_source=chatgpt.com "Amazon Bedrock AgentCore Documentation"
-[4]: https://github.com/aws/bedrock-agentcore-starter-toolkit?utm_source=chatgpt.com "aws/bedrock-agentcore-starter-toolkit"
-[5]: https://aws.amazon.com/jp/blogs/startup/5min-ai-agent-hosting/?utm_source=chatgpt.com "5分で AI エージェントをデプロイ・ホスティングする"
-[6]: https://strandsagents.com/latest/documentation/docs/user-guide/deploy/deploy_to_bedrock_agentcore/?utm_source=chatgpt.com "Deploying Strands Agents to Amazon Bedrock AgentCore ..."
-[7]: https://aws.amazon.com/bedrock/agentcore/?utm_source=chatgpt.com "Amazon Bedrock AgentCore- AWS"
+you> exit
+
+l.io/)rotocoodelcontextptps://mCP プロトコル](ht[M- ts)
+agenabs/strands-m/awsl//github.coents](https:[Strands Ag
+- eway.html)tcore-gatide/agenrguk/latest/useedroccom/bmazon./docs.aws.as:/tpト](htway ドキュメンGateAgentCore 
+
+- [## 参考資料```
+
+ # このファイル
+d          DME.mREAト
+└── 数テンプレー # 環境変    mplate  ── .env.teスクリプト
+├    # 環境変数設定nv.ps1   ── setup_e 依存関係
+├xt    #s.tuirement
+├── req本体 + REPLモード    # エージェント   n.py      ├── mai
+ポイントuntime用エントリーgentCore R         # A  ── app.py   tcore/
+├gen
+
+```
+aイル構成ファい
+
+## 確認してくださいるかが稼働してewayURLが正しいか、GatGATEWAY_
+```
+
+→ edction refusConne
+❌ 初期化エラー: ```way接続エラー
+
+ate### Gください。
+
+ます。再起動して能性がありれている可ンの有効期限が切アクセストーク
+→ ```
+403
+
+❌ HTTPエラー: 得エラー
+
+```
+### ツール一覧取いか確認してください
+ECRETが正しとCLIENT_ST_IDLIEN
+```
+
+→ C01ン取得失敗: 4``
+❌ トーク
+`取得エラー
+
+
+### トークン トラブルシューティング
+##
+``ast-1
+`n ap-northe
+  --region3.10 `ytho--runtime ppy `
+  -point app.  --entry
+ent `b-search-ag --name kdeploy `
+ core hell
+agent
+
+```powersimeへのデプロイCore Runt
+### Agentbye!
+```
